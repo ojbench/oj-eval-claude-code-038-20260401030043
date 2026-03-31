@@ -17,22 +17,23 @@ private:
     size_t capacity_;
 
     void reallocate(size_t new_capacity) {
-        T* new_data = static_cast<T*>(::operator new(new_capacity * sizeof(T)));
+        if constexpr (std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>) {
+            // Use realloc for trivially copyable types - much faster
+            data_ = static_cast<T*>(std::realloc(data_, new_capacity * sizeof(T)));
+        } else {
+            T* new_data = static_cast<T*>(::operator new(new_capacity * sizeof(T)));
 
-        if (data_) {
-            // Move or copy construct elements
-            if constexpr (std::is_trivially_copyable_v<T>) {
-                std::memcpy(new_data, data_, size_ * sizeof(T));
-            } else {
+            if (data_) {
+                // Move or copy construct elements
                 for (size_t i = 0; i < size_; ++i) {
                     new (new_data + i) T(std::move(data_[i]));
                     data_[i].~T();
                 }
+                ::operator delete(data_);
             }
-            ::operator delete(data_);
-        }
 
-        data_ = new_data;
+            data_ = new_data;
+        }
         capacity_ = new_capacity;
     }
 
@@ -42,7 +43,11 @@ public:
 
     explicit vector(size_t n) : data_(nullptr), size_(0), capacity_(0) {
         if (n > 0) {
-            data_ = static_cast<T*>(::operator new(n * sizeof(T)));
+            if constexpr (std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>) {
+                data_ = static_cast<T*>(std::malloc(n * sizeof(T)));
+            } else {
+                data_ = static_cast<T*>(::operator new(n * sizeof(T)));
+            }
             capacity_ = n;
             size_ = n;
             for (size_t i = 0; i < n; ++i) {
@@ -53,7 +58,11 @@ public:
 
     vector(size_t n, const T& value) : data_(nullptr), size_(0), capacity_(0) {
         if (n > 0) {
-            data_ = static_cast<T*>(::operator new(n * sizeof(T)));
+            if constexpr (std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>) {
+                data_ = static_cast<T*>(std::malloc(n * sizeof(T)));
+            } else {
+                data_ = static_cast<T*>(::operator new(n * sizeof(T)));
+            }
             capacity_ = n;
             size_ = n;
             for (size_t i = 0; i < n; ++i) {
@@ -64,17 +73,17 @@ public:
 
     vector(const vector& other) : data_(nullptr), size_(0), capacity_(0) {
         if (other.size_ > 0) {
-            data_ = static_cast<T*>(::operator new(other.size_ * sizeof(T)));
-            capacity_ = other.size_;
-            size_ = other.size_;
-
-            if constexpr (std::is_trivially_copyable_v<T>) {
-                std::memcpy(data_, other.data_, size_ * sizeof(T));
+            if constexpr (std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>) {
+                data_ = static_cast<T*>(std::malloc(other.size_ * sizeof(T)));
+                std::memcpy(data_, other.data_, other.size_ * sizeof(T));
             } else {
-                for (size_t i = 0; i < size_; ++i) {
+                data_ = static_cast<T*>(::operator new(other.size_ * sizeof(T)));
+                for (size_t i = 0; i < other.size_; ++i) {
                     new (data_ + i) T(other.data_[i]);
                 }
             }
+            capacity_ = other.size_;
+            size_ = other.size_;
         }
     }
 
@@ -92,7 +101,11 @@ public:
                     data_[i].~T();
                 }
             }
-            ::operator delete(data_);
+            if constexpr (std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>) {
+                std::free(data_);
+            } else {
+                ::operator delete(data_);
+            }
         }
     }
 
@@ -105,21 +118,25 @@ public:
                         data_[i].~T();
                     }
                 }
-                ::operator delete(data_);
+                if constexpr (std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>) {
+                    std::free(data_);
+                } else {
+                    ::operator delete(data_);
+                }
             }
 
             if (other.size_ > 0) {
-                data_ = static_cast<T*>(::operator new(other.size_ * sizeof(T)));
-                capacity_ = other.size_;
-                size_ = other.size_;
-
-                if constexpr (std::is_trivially_copyable_v<T>) {
-                    std::memcpy(data_, other.data_, size_ * sizeof(T));
+                if constexpr (std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>) {
+                    data_ = static_cast<T*>(std::malloc(other.size_ * sizeof(T)));
+                    std::memcpy(data_, other.data_, other.size_ * sizeof(T));
                 } else {
-                    for (size_t i = 0; i < size_; ++i) {
+                    data_ = static_cast<T*>(::operator new(other.size_ * sizeof(T)));
+                    for (size_t i = 0; i < other.size_; ++i) {
                         new (data_ + i) T(other.data_[i]);
                     }
                 }
+                capacity_ = other.size_;
+                size_ = other.size_;
             } else {
                 data_ = nullptr;
                 size_ = 0;
@@ -137,7 +154,11 @@ public:
                         data_[i].~T();
                     }
                 }
-                ::operator delete(data_);
+                if constexpr (std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>) {
+                    std::free(data_);
+                } else {
+                    ::operator delete(data_);
+                }
             }
 
             data_ = other.data_;
@@ -196,7 +217,11 @@ public:
     void shrink_to_fit() {
         if (size_ < capacity_) {
             if (size_ == 0) {
-                ::operator delete(data_);
+                if constexpr (std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>) {
+                    std::free(data_);
+                } else {
+                    ::operator delete(data_);
+                }
                 data_ = nullptr;
                 capacity_ = 0;
             } else {
